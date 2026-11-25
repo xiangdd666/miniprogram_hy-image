@@ -1,0 +1,483 @@
+<!-- miniprogram/pages/index/index.wxml -->
+<view class="studio-page">
+  <!-- 顶部状态条 -->
+  <view class="top-bar">
+    <view class="brand-wrap">
+      <view class="brand-badge">HY 3.5</view>
+      <view class="brand-meta">
+        <text class="brand-title">混元生图工作台</text>
+        <view class="channel-pill {{channel === 'cloud' ? 'pill-cloud' : 'pill-http'}}" bindtap="openSettings">
+          <view class="status-dot"></view>
+          <text>{{channel === 'cloud' ? '云函数通道 (正式号)' : 'HTTP 网关 (测试号可用)'}}</text>
+        </view>
+      </view>
+    </view>
+    <button class="icon-btn" bindtap="openSettings" hover-class="btn-hover">
+      <text class="icon-text">⚙️</text>
+      <text class="icon-label">通道</text>
+    </button>
+  </view>
+
+  <!-- 模式切换 Tabs -->
+  <view class="mode-tabs">
+    <view
+      class="mode-tab {{mode === 'text2image' ? 'active' : ''}}"
+      data-mode="text2image"
+      bindtap="switchMode"
+    >
+      <text>✨ 文生图</text>
+    </view>
+    <view
+      class="mode-tab {{mode === 'image2image' ? 'active' : ''}}"
+      data-mode="image2image"
+      bindtap="switchMode"
+    >
+      <text>🖼️ 垫图 / 参考生图</text>
+    </view>
+  </view>
+
+  <!-- 1. 提示词输入卡片 -->
+  <view class="card">
+    <view class="card-header">
+      <view class="card-title-row">
+        <text class="card-title">画面描述 (Prompt)</text>
+        <text class="required-star">*</text>
+      </view>
+      <view class="header-actions">
+        <text class="mini-action accent" bindtap="fillRandomPrompt">✨ 灵感</text>
+        <text class="mini-action" bindtap="clearPrompt">清空</text>
+      </view>
+    </view>
+
+    <!-- 弹窗打开时临时隐藏原生 textarea 防止层级穿透 -->
+    <textarea
+      wx:if="{{!showSettings && !showHistoryManager}}"
+      class="prompt-textarea"
+      value="{{prompt}}"
+      placeholder="描述你想生成的画面，如：月夜竹林古道，东方女侠衣袂飘飞，电影级光影，8k..."
+      placeholder-class="textarea-placeholder"
+      maxlength="2000"
+      bindinput="onPromptInput"
+    />
+    <view wx:else class="prompt-textarea placeholder-box">
+      <text>{{prompt || '提示词编辑中...'}}</text>
+    </view>
+
+    <!-- 风格快捷标签 -->
+    <scroll-view class="tags-scroll" scroll-x enable-flex>
+      <view class="tags-row">
+        <view
+          wx:for="{{styleTags}}"
+          wx:key="label"
+          class="style-tag"
+          data-tag="{{item.tag}}"
+          bindtap="appendStyleTag"
+        >
+          <text>{{item.label}}</text>
+        </view>
+      </view>
+    </scroll-view>
+
+    <view class="card-footer-meta">
+      <text class="meta-hint">点击风格标签可快速追加到末尾</text>
+      <text class="char-count">{{prompt.length}} / 2000</text>
+    </view>
+  </view>
+
+  <!-- 2. 参考底图卡片 (垫图模式) -->
+  <view class="card" wx:if="{{mode === 'image2image'}}">
+    <view class="card-header">
+      <view class="card-title-row">
+        <text class="card-title">参考底图 (垫图)</text>
+        <text class="meta-hint card-subtitle">支持相册或链接</text>
+      </view>
+      <text wx:if="{{refImageDisplay}}" class="mini-action danger" bindtap="clearRefImage">移除</text>
+    </view>
+
+    <view wx:if="{{!refImageDisplay}}" class="upload-box" bindtap="chooseRefImage">
+      <text class="upload-icon">📷</text>
+      <text class="upload-title">点击从相册选择或拍照</text>
+      <text class="upload-sub">{{channel === 'cloud' ? '将自动上传云存储生成临时链接' : '将自动压缩转码后传给模型'}}</text>
+    </view>
+
+    <view wx:else class="ref-preview-wrap">
+      <image class="ref-preview-img" src="{{refImageDisplay}}" mode="aspectFit" bindtap="previewRefImage" />
+      <view class="ref-preview-info">
+        <text class="ref-badge">{{refImageLabel}}</text>
+        <text class="mini-action" bindtap="chooseRefImage">更换图片</text>
+      </view>
+    </view>
+
+    <view class="url-row">
+      <input
+        class="text-input url-input"
+        value="{{refUrlInput}}"
+        placeholder="或粘贴公网图片 URL..."
+        placeholder-class="input-placeholder"
+        bindinput="onRefUrlInput"
+      />
+      <button class="btn-secondary btn-sm" bindtap="applyRefUrl">加载</button>
+    </view>
+  </view>
+
+  <!-- 3. 画幅比例与画质档位 -->
+  <view class="card">
+    <view class="card-header">
+      <text class="card-title">画幅比例与分辨率（选填）</text>
+      <text class="size-badge">{{currentSizeLabel}}</text>
+    </view>
+
+    <view class="ratio-grid">
+      <view
+        wx:for="{{ratios}}"
+        wx:key="value"
+        class="ratio-item {{item.value === 'auto' ? 'ratio-auto' : ''}} {{selectedRatio === item.value ? 'active' : ''}}"
+        data-ratio="{{item.value}}"
+        bindtap="selectRatio"
+      >
+        <text class="ratio-name">{{item.label}}</text>
+        <text class="ratio-sub">{{item.desc}}</text>
+      </view>
+    </view>
+
+    <!-- 预设档位 -->
+    <view wx:if="{{selectedRatio !== 'custom'}}" class="quality-row">
+      <text class="sub-label">清晰度</text>
+      <view class="quality-pills">
+        <view
+          wx:for="{{multipliers}}"
+          wx:key="value"
+          wx:if="{{!(selectedRatio === 'auto' && item.value === 4)}}"
+          class="quality-pill {{selectedMultiplier === item.value ? 'active' : ''}} {{item.value === 4 ? 'pill-4k' : ''}}"
+          data-multiplier="{{item.value}}"
+          bindtap="selectMultiplier"
+        >
+          <text>{{item.label}}</text>
+        </view>
+      </view>
+    </view>
+
+    <!-- 自定义宽高 -->
+    <view wx:else class="custom-size-row">
+      <view class="custom-input-wrap">
+        <text class="custom-label">宽</text>
+        <input
+          class="text-input custom-num-input"
+          type="number"
+          value="{{customWidth}}"
+          bindinput="onCustomWidthInput"
+        />
+      </view>
+      <text class="custom-times">×</text>
+      <view class="custom-input-wrap">
+        <text class="custom-label">高</text>
+        <input
+          class="text-input custom-num-input"
+          type="number"
+          value="{{customHeight}}"
+          bindinput="onCustomHeightInput"
+        />
+      </view>
+    </view>
+
+    <view wx:if="{{selectedMultiplier >= 2 || selectedRatio === 'custom'}}" class="timeout-tip">
+      <text>💡 提示：2K / 4K 出图耗时较长，若使用云函数模式请确保云函数超时已调至 60s；测试号 HTTP 模式默认支持更长等待。</text>
+    </view>
+  </view>
+
+  <!-- 4. 高级参数折叠面板 -->
+  <view class="card">
+    <view class="accordion-header" bindtap="toggleAdvanced">
+      <text class="card-title">高级参数 (无水印 / Seed / 搜索 / 会话)</text>
+      <text class="chevron {{showAdvanced ? 'open' : ''}}">▼</text>
+    </view>
+
+    <view wx:if="{{showAdvanced}}" class="advanced-body">
+      <!-- 无水印模式 -->
+      <view class="setting-row">
+        <view class="setting-info">
+          <text class="setting-title">🚫 纯净无水印模式</text>
+          <text class="setting-desc">默认通过空格覆盖消除右下角“AI 生成”水印</text>
+        </view>
+        <switch checked="{{removeWatermark}}" color="#6366F1" bindchange="onWatermarkSwitch" />
+      </view>
+
+      <view wx:if="{{!removeWatermark}}" class="sub-input-block">
+        <input
+          class="text-input"
+          value="{{footnote}}"
+          maxlength="16"
+          placeholder="输入自定义水印（最多16字符，留空则显示默认水印）"
+          placeholder-class="input-placeholder"
+          bindinput="onFootnoteInput"
+        />
+      </view>
+
+      <!-- 联网搜索增强 -->
+      <view class="setting-row">
+        <view class="setting-info">
+          <text class="setting-title">🌐 联网搜索增强</text>
+          <text class="setting-desc">结合实时网络信息增强画面时效与细节</text>
+        </view>
+        <switch checked="{{useSearchTool}}" color="#6366F1" bindchange="onSearchSwitch" />
+      </view>
+
+      <!-- 随机种子 Seed -->
+      <view class="sub-input-block">
+        <view class="sub-header">
+          <text class="setting-title">🎲 随机种子 (Seed，0 为随机)</text>
+          <text class="mini-action accent" bindtap="randomizeSeed">随机生成</text>
+        </view>
+        <input
+          class="text-input"
+          type="number"
+          value="{{seed}}"
+          placeholder="0"
+          placeholder-class="input-placeholder"
+          bindinput="onSeedInput"
+        />
+      </view>
+
+      <!-- Session ID -->
+      <view class="sub-input-block">
+        <view class="sub-header">
+          <text class="setting-title">💬 会话标识 (Session ID)</text>
+          <text class="mini-action accent" bindtap="resetSession">新建会话</text>
+        </view>
+        <input
+          class="text-input mono"
+          value="{{sessionId}}"
+          bindinput="onSessionInput"
+        />
+      </view>
+    </view>
+  </view>
+
+  <!-- 5. 主生成按钮 -->
+  <view class="generate-wrap">
+    <button
+      class="btn-primary {{isGenerating ? 'disabled' : ''}}"
+      disabled="{{isGenerating}}"
+      bindtap="handleGenerate"
+    >
+      <text wx:if="{{!isGenerating}}">✨ 立即生成画面</text>
+      <text wx:else>⏳ 混元演算中 ({{elapsedText}}s)...</text>
+    </button>
+  </view>
+
+  <!-- 6. 画布预览与结果操作区 -->
+  <view id="result-section" class="card canvas-card">
+    <view class="card-header">
+      <text class="card-title">作品画布</text>
+      <text class="status-tag {{statusType}}">{{statusText}}</text>
+    </view>
+
+    <!-- 空状态 -->
+    <view wx:if="{{!isGenerating && !currentImageUrl}}" class="canvas-empty">
+      <text class="empty-icon">🎨</text>
+      <text class="empty-title">准备就绪，等待灵感落笔</text>
+      <text class="empty-desc">支持文生图、本地垫图参考、无水印与多轮连续修改</text>
+    </view>
+
+    <!-- 加载中状态 -->
+    <view wx:if="{{isGenerating}}" class="canvas-loading">
+      <view class="spinner"></view>
+      <text class="loading-stage">{{loadingStageText}}</text>
+      <text class="loading-timer">已耗时 {{elapsedText}} 秒</text>
+      <view class="progress-track">
+        <view class="progress-fill" style="width: {{progressPercent}}%;"></view>
+      </view>
+    </view>
+
+    <!-- 图片结果展示 -->
+    <view wx:if="{{!isGenerating && currentImageUrl}}" class="canvas-result">
+      <image
+        class="result-image"
+        src="{{currentImageUrl}}"
+        mode="aspectFit"
+        bindtap="previewCurrentImage"
+        show-menu-by-longpress
+      />
+      <text class="preview-tip">点击图片可全屏放大，长按也可直接转发或保存</text>
+
+      <view class="result-actions-grid">
+        <button class="btn-secondary action-btn" bindtap="reuseAsRef">🖼️ 设为垫图</button>
+        <button class="btn-secondary action-btn" bindtap="copyImageUrl">🔗 复制链接</button>
+      </view>
+
+      <view wx:if="{{isUploadingCloud}}" class="cloud-saved-bar">
+        <text class="cloud-saved-text">⏳ 正在自动保存至云存储...</text>
+      </view>
+      <view wx:elif="{{currentCloudFileId}}" class="cloud-saved-bar" bindtap="copyImageUrl">
+        <text class="cloud-saved-text">☁️ 已自动存云存储: {{currentCloudFileId}}</text>
+        <text class="cloud-copy-hint">复制临时链接</text>
+      </view>
+    </view>
+
+    <!-- 多轮迭代编辑面板 -->
+    <view wx:if="{{!isGenerating && currentImageUrl && canMultiTurn}}" class="multi-turn-box">
+      <view class="multi-turn-header">
+        <view class="multi-turn-badge">
+          <text>🔄 多轮修图 · 第 {{round}} 轮</text>
+        </view>
+        <text class="mini-action" bindtap="endMultiTurn">退出多轮</text>
+      </view>
+      <view class="multi-turn-input-row">
+        <input
+          class="text-input multi-input"
+          value="{{multiTurnPrompt}}"
+          placeholder="在当前图基础上修改，如：把背景换成黄昏雪山..."
+          placeholder-class="input-placeholder"
+          confirm-type="send"
+          bindinput="onMultiTurnInput"
+          bindconfirm="handleMultiTurnGenerate"
+        />
+        <button class="btn-primary btn-send" bindtap="handleMultiTurnGenerate">修改</button>
+      </view>
+    </view>
+  </view>
+
+  <!-- 7. 云端与本地历史画廊 -->
+  <view class="card" wx:if="{{gallery.length > 0}}">
+    <view class="card-header">
+      <text class="card-title">生成历史 ({{gallery.length}})</text>
+      <view class="header-actions">
+        <text class="mini-action accent" bindtap="refreshCloudHistory">同步云端</text>
+        <text class="mini-action accent" bindtap="openHistoryManager">历史管理</text>
+      </view>
+    </view>
+
+    <scroll-view class="gallery-scroll" scroll-x enable-flex>
+      <view class="gallery-row">
+        <view
+          wx:for="{{gallery}}"
+          wx:key="id"
+          class="gallery-card {{(currentImageUrl === item.url || (item.cloudFileId && currentImageUrl === item.cloudFileId)) ? 'active' : ''}}"
+          data-index="{{index}}"
+          bindtap="selectHistoryItem"
+        >
+          <view class="gallery-thumb-wrap">
+            <image class="gallery-thumb" src="{{item.cloudFileId || item.url}}" mode="aspectFill" lazy-load />
+            <text wx:if="{{item.cloudFileId}}" class="gallery-cloud-badge">☁️</text>
+          </view>
+          <view class="gallery-meta">
+            <text class="gallery-size">{{item.size}}</text>
+            <text class="gallery-time">{{item.time}}</text>
+          </view>
+        </view>
+      </view>
+    </scroll-view>
+    <text class="meta-hint">注：已默认自动保存至云存储并同步云数据库，跨设备登录也可查看；可在「历史管理」中删除指定记录。</text>
+  </view>
+
+  <!-- 生成历史管理弹窗 -->
+  <view wx:if="{{showHistoryManager}}" class="modal-mask" bindtap="closeHistoryManager">
+    <view class="modal-panel history-manage-panel" catchtap="noop">
+      <view class="modal-header">
+        <text class="modal-title">生成历史管理 ({{gallery.length}})</text>
+        <text class="modal-close" bindtap="closeHistoryManager">✕</text>
+      </view>
+
+      <view class="manage-toolbar">
+        <text class="mini-action accent" bindtap="toggleSelectAllHistory">
+          {{isAllHistorySelected ? '取消全选' : '全选'}}
+        </text>
+        <text class="manage-tip">已选 {{selectedHistoryCount}} 条</text>
+      </view>
+
+      <scroll-view class="history-manage-list" scroll-y>
+        <view
+          wx:for="{{gallery}}"
+          wx:key="id"
+          class="history-manage-item {{historySelectedMap[item.id] ? 'selected' : ''}}"
+          data-id="{{item.id}}"
+          bindtap="toggleSelectHistoryItem"
+        >
+          <view class="manage-check {{historySelectedMap[item.id] ? 'checked' : ''}}">
+            <text wx:if="{{historySelectedMap[item.id]}}">✓</text>
+          </view>
+          <image
+            class="manage-thumb"
+            src="{{item.cloudFileId || item.url}}"
+            mode="aspectFill"
+          />
+          <view class="manage-info">
+            <text class="manage-prompt">{{item.prompt || '无提示词记录'}}</text>
+            <text class="manage-meta">{{item.size}} · {{item.time}}{{item.cloudFileId ? ' · ☁️ 已上云' : ''}}</text>
+          </view>
+          <view
+            class="manage-del-btn"
+            data-index="{{index}}"
+            catchtap="deleteSingleHistoryItem"
+          >
+            <text>删除</text>
+          </view>
+        </view>
+      </scroll-view>
+
+      <view class="modal-footer">
+        <button class="btn-secondary modal-btn" bindtap="closeHistoryManager">关闭</button>
+        <button
+          class="btn-danger modal-btn {{selectedHistoryCount === 0 || isDeletingHistory ? 'disabled' : ''}}"
+          disabled="{{selectedHistoryCount === 0 || isDeletingHistory}}"
+          bindtap="deleteSelectedHistory"
+        >
+          <text wx:if="{{isDeletingHistory}}">删除中...</text>
+          <text wx:else>删除选中 ({{selectedHistoryCount}})</text>
+        </button>
+      </view>
+    </view>
+  </view>
+
+  <!-- 通道与环境配置弹窗 -->
+  <view wx:if="{{showSettings}}" class="modal-mask" bindtap="closeSettings">
+    <view class="modal-panel" catchtap="noop">
+      <view class="modal-header">
+        <text class="modal-title">连接通道设置</text>
+        <text class="modal-close" bindtap="closeSettings">✕</text>
+      </view>
+
+      <view class="modal-body">
+        <text class="setting-title">选择生图调用方式</text>
+        <view class="channel-options">
+          <view
+            class="channel-card {{draftChannel === 'http' ? 'active' : ''}}"
+            data-channel="http"
+            bindtap="selectDraftChannel"
+          >
+            <text class="channel-card-title">🌐 HTTP 云函数网关（测试号推荐）</text>
+            <text class="channel-card-desc">直接请求已部署网关，免 API Key，无需绑定测试号云环境（需开启不校验合法域名）。</text>
+          </view>
+          <view
+            class="channel-card {{draftChannel === 'cloud' ? 'active' : ''}}"
+            data-channel="cloud"
+            bindtap="selectDraftChannel"
+          >
+            <text class="channel-card-title">☁️ wx.cloud.callFunction（正式号推荐）</text>
+            <text class="channel-card-desc">正式小程序 AppID 绑定环境并上传 hy-image-gateway 后使用，官方合规通道、无需配置域名。</text>
+          </view>
+        </view>
+
+        <view class="sub-input-block">
+          <text class="setting-title">云开发环境 ID (Env ID)</text>
+          <input class="text-input mono" value="{{draftEnvId}}" bindinput="onDraftEnvInput" />
+        </view>
+
+        <view wx:if="{{draftChannel === 'http'}}" class="sub-input-block">
+          <text class="setting-title">HTTP 网关地址</text>
+          <input class="text-input mono" value="{{draftGatewayUrl}}" bindinput="onDraftGatewayInput" />
+        </view>
+
+        <view wx:else class="sub-input-block">
+          <text class="setting-title">云函数名称</text>
+          <input class="text-input mono" value="{{draftCloudFunc}}" bindinput="onDraftFuncInput" />
+        </view>
+      </view>
+
+      <view class="modal-footer">
+        <button class="btn-secondary modal-btn" bindtap="closeSettings">取消</button>
+        <button class="btn-primary modal-btn" bindtap="saveSettings">保存生效</button>
+      </view>
+    </view>
+  </view>
+</view>

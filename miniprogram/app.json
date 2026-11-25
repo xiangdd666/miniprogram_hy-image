@@ -1,0 +1,15 @@
+{
+  "pages": [
+    "pages/index/index"
+  ],
+  "window": {
+    "backgroundColor": "#0B0E14",
+    "backgroundTextStyle": "light",
+    "navigationBarBackgroundColor": "#111622",
+    "navigationBarTitleText": "Hy-Image 3.5 AI 工作台",
+    "navigationBarTextStyle": "white"
+  },
+  "sitemapLocation": "sitemap.json",
+  "style": "v2",
+  "lazyCodeLoading": "requiredComponents"
+}
